@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+include ACDL-system-development-plan.md
+include ACDL-system-runtime.md
+recursive-include docs *.md
+recursive-include scripts *.sh

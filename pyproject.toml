@@ -12,6 +12,16 @@ license = "MIT"
 authors = [
   { name = "ACDL Contributors" }
 ]
+keywords = ["agent", "collaboration", "cli", "developer-tools", "documentation"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development",
+  "Topic :: Software Development :: Documentation",
+]
 dependencies = []
 
 [project.scripts]
