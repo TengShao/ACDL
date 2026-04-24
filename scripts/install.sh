@@ -1,19 +1,10 @@
 #!/bin/sh
 set -eu
 
-ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-BIN_DIR=${ACDL_INSTALL_BIN:-"$HOME/.local/bin"}
-LAUNCHER="$BIN_DIR/acdl"
+VERSION=${ACDL_VERSION:-"0.1.0"}
+WHEEL_URL=${ACDL_WHEEL_URL:-"https://github.com/TengShao/ACDL/releases/download/v$VERSION/acdl-$VERSION-py3-none-any.whl"}
 
-mkdir -p "$BIN_DIR"
+python3 -m pip install --user "$WHEEL_URL"
 
-cat > "$LAUNCHER" <<EOF
-#!/bin/sh
-PYTHONPATH="$ROOT_DIR\${PYTHONPATH:+:\$PYTHONPATH}" exec python3 -m acdl "\$@"
-EOF
-
-chmod +x "$LAUNCHER"
-
-echo "ACDL launcher installed at: $LAUNCHER"
+echo "ACDL installed from: $WHEEL_URL"
 echo "Verify with: acdl --help"
-echo "If needed, add this to PATH: export PATH=\"$BIN_DIR:\$PATH\""

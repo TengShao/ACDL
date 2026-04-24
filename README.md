@@ -18,10 +18,10 @@ The project is currently an MVP implemented with Python standard library only.
 
 ## Install
 
-Clone or copy this repository, then install the global launcher:
+Install the published wheel. This does not require cloning the ACDL repository:
 
 ```bash
-sh scripts/install.sh
+python3 -m pip install --user "https://github.com/TengShao/ACDL/releases/download/v0.1.0/acdl-0.1.0-py3-none-any.whl"
 ```
 
 Verify:
@@ -30,58 +30,60 @@ Verify:
 acdl --help
 ```
 
-By default, the installer writes the launcher to:
+If your shell cannot find `acdl`, make sure Python's user scripts directory is on `PATH`.
+
+On macOS this is commonly:
 
 ```bash
-$HOME/.local/bin/acdl
+$HOME/Library/Python/<python-version>/bin
 ```
 
-If your shell cannot find `acdl`, make sure this directory is on `PATH`:
+For example:
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/Library/Python/3.14/bin:$PATH"
 ```
 
 Uninstall:
 
 ```bash
-sh scripts/uninstall.sh
-```
-
-Optional Python package install is also supported when the target machine has Python packaging tools available:
-
-```bash
-python3 -m pip install --user .
+python3 -m pip uninstall acdl
 ```
 
 ## Usage
 
-After installation, run:
+After installation, run `acdl` from any project checkout.
+
+First-time project onboarding:
 
 ```bash
 acdl retrofit --root /path/to/project
+```
+
+Per-task flow:
+
+```bash
 acdl bootstrap --root /path/to/project --task "Implement login"
-acdl contract --root /path/to/project --task "Implement login"
+acdl contract --root /path/to/project --task "Implement login" --scope src/ --check "npm run test"
 acdl sync --root /path/to/project
 acdl preflight --root /path/to/project
 acdl handoff --root /path/to/project
-acdl maintain --root /path/to/project
 ```
 
-You can also run directly from the source checkout without installing:
+Long-term maintenance:
 
 ```bash
-python3 -m acdl --help
+acdl maintain --root /path/to/project
 ```
 
 ## Distribution
 
-For a small team, the simplest distribution path is:
+For the team, the intended distribution path is:
 
-1. Put this repository in a shared Git location.
-2. Team members clone it.
-3. Team members run `sh scripts/install.sh`.
-4. Everyone uses the global `acdl` command against their project repositories.
+1. Maintainer tags a release, for example `v0.1.0`.
+2. GitHub Actions builds `acdl-0.1.0-py3-none-any.whl`.
+3. GitHub Release stores the wheel.
+4. Team members install the wheel URL directly.
 
 See [docs/distribution.md](docs/distribution.md) for install, upgrade, and release options.
 
@@ -89,4 +91,5 @@ See [docs/distribution.md](docs/distribution.md) for install, upgrade, and relea
 
 ```bash
 python3 -m unittest discover -s tests
+sh scripts/build.sh
 ```

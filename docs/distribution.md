@@ -1,95 +1,87 @@
 # ACDL Distribution Guide
 
-This guide explains how to share ACDL with teammates so they can use the global `acdl` command instead of running `python3 -m acdl` from this source directory.
+This guide explains how to share ACDL with teammates without asking them to clone the ACDL source repository.
 
 ## Recommended Team Distribution
 
-Use a shared Git repository as the distribution source.
+Use GitHub Releases as the distribution source.
 
 ```bash
-git clone <your-acdl-repo-url>
-cd co-op-skills
-sh scripts/install.sh
+python3 -m pip install --user "https://github.com/TengShao/ACDL/releases/download/v0.1.0/acdl-0.1.0-py3-none-any.whl"
 acdl --help
 ```
 
-The installer creates a lightweight launcher at:
+This installs a normal Python console command named `acdl`.
 
-```bash
-$HOME/.local/bin/acdl
-```
-
-The launcher points at the cloned source directory by setting `PYTHONPATH` and running `python3 -m acdl`. This keeps distribution dependency-free: teammates do not need setuptools, wheel, pipx, or a package registry.
-
-For active ACDL development, keep using the same launcher. Changes in the checkout are immediately reflected in the `acdl` command.
+Teammates do not need the ACDL source checkout. They only need Python and pip.
 
 ## Upgrade
 
-From the local checkout:
+Install the newer wheel URL:
 
 ```bash
-git pull
-```
-
-No reinstall is required after `git pull` because the launcher points at the checkout.
-
-If the checkout moved to another directory:
-
-```bash
-sh scripts/install.sh
+python3 -m pip install --user --upgrade "https://github.com/TengShao/ACDL/releases/download/v0.1.1/acdl-0.1.1-py3-none-any.whl"
 ```
 
 ## Uninstall
 
 ```bash
-sh scripts/uninstall.sh
+python3 -m pip uninstall acdl
 ```
 
 ## PATH Notes
 
-The default installer writes to:
+`pip install --user` writes the `acdl` executable into Python's user scripts directory.
+
+On macOS this is commonly:
+
+```bash
+$HOME/Library/Python/<python-version>/bin
+```
+
+For example:
+
+```bash
+export PATH="$HOME/Library/Python/3.14/bin:$PATH"
+```
+
+On Linux this is commonly:
 
 ```bash
 $HOME/.local/bin
 ```
 
-If `acdl --help` says command not found, add the scripts directory to your shell profile:
+For example:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-To install the launcher somewhere else:
+## Maintainer Build
+
+Maintainers build the wheel from this repository:
 
 ```bash
-ACDL_INSTALL_BIN=/usr/local/bin sh scripts/install.sh
+python3 -m unittest discover -s tests
+sh scripts/build.sh
 ```
 
-## Optional Pip Installation
+The wheel is written to `dist/`:
 
-ACDL also has Python package metadata in `pyproject.toml`.
-
-Use this path when the target machine has Python packaging tools available:
-
-```bash
-python3 -m pip install --user .
+```text
+dist/acdl-0.1.0-py3-none-any.whl
 ```
 
-This creates a normal Python console script entry point named `acdl`. If packaging tools are not available, prefer `sh scripts/install.sh`.
+The build script uses only Python standard library modules. It does not require `setuptools`, `wheel`, or `python -m build`.
 
-## Wheel / Archive Distribution
+## Release Flow
 
-For teams that do not want every member to clone the source repository:
-
-1. Build a wheel in a clean environment.
-2. Share the `.whl` file through an internal file server or artifact registry.
-3. Team members install the wheel with pip.
-
-Install from a wheel:
-
-```bash
-python3 -m pip install --user acdl-0.1.0-py3-none-any.whl
-```
+1. Update `version` in `pyproject.toml`.
+2. Run tests and `sh scripts/build.sh`.
+3. Commit the version change.
+4. Create and push a tag, for example `v0.1.0`.
+5. GitHub Actions builds and uploads the wheel to the GitHub Release.
+6. Share the release wheel URL with teammates.
 
 ## Current Release Contract
 
