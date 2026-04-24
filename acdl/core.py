@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import tomllib
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -153,21 +152,26 @@ def preflight(root: Path) -> CommandResult:
     ensure_root(root)
     failures: list[str] = []
     warnings: list[str] = []
+    check_results: list[dict[str, Any]] = []
 
     required = [Path("AGENTS.md"), *DOC_FILES.values()]
     for relative in required:
         if not (root / relative).exists():
             failures.append(f"Missing required fact source: {relative}")
 
-    if not (root / ".acdl/task-contract.json").exists():
+    task_contract_path = root / ".acdl/task-contract.json"
+    if not task_contract_path.exists():
         warnings.append("Missing .acdl/task-contract.json. Run `acdl contract` before task work.")
+    else:
+        task_contract = load_task_contract(task_contract_path, failures)
+        check_results = run_required_checks(root, task_contract.get("required_checks", []), failures, warnings)
 
     changed = git_changed_files(root)
     impact = analyze_change_impact(changed)
     required_updates = required_updates_for_impact(impact)
     for target in required_updates:
-        if not changed_or_exists(root, changed, target):
-            warnings.append(f"Potential fact-source drift: {target} may need an update.")
+        if target not in changed:
+            warnings.append(f"Potential fact-source drift: {target} must be updated in this change.")
 
     open_questions = root / "docs/open-questions.md"
     if open_questions.exists() and has_unresolved_questions(open_questions):
@@ -178,6 +182,7 @@ def preflight(root: Path) -> CommandResult:
         "status": "failed" if failures else "passed",
         "failures": failures,
         "warnings": warnings,
+        "check_results": check_results,
         "changed_files": changed,
         "impact": impact,
     }
@@ -399,6 +404,92 @@ def required_updates_for_impact(impact: dict[str, bool]) -> list[str]:
     return updates
 
 
+def load_task_contract(path: Path, failures: list[str]) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        failures.append(f"Invalid task contract JSON: {path} ({exc})")
+        return {}
+    except OSError as exc:
+        failures.append(f"Cannot read task contract: {path} ({exc})")
+        return {}
+    if not isinstance(payload, dict):
+        failures.append(f"Invalid task contract shape: {path} must contain a JSON object.")
+        return {}
+    return payload
+
+
+def run_required_checks(
+    root: Path,
+    checks: Any,
+    failures: list[str],
+    warnings: list[str],
+) -> list[dict[str, Any]]:
+    if not isinstance(checks, list):
+        failures.append("Invalid task contract: required_checks must be a list.")
+        return []
+
+    results: list[dict[str, Any]] = []
+    for raw_command in checks:
+        command = str(raw_command).strip()
+        if not command:
+            warnings.append("Skipping empty required check.")
+            continue
+        if command.startswith("TODO"):
+            warnings.append(f"Required check is not declared: {command}")
+            results.append({"command": command, "status": "skipped", "reason": "TODO placeholder"})
+            continue
+
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=root,
+                shell=True,
+                check=False,
+                text=True,
+                capture_output=True,
+                timeout=600,
+            )
+        except subprocess.TimeoutExpired as exc:
+            failures.append(f"Required check timed out after 600s: {command}")
+            results.append(
+                {
+                    "command": command,
+                    "status": "timeout",
+                    "returncode": None,
+                    "stdout": trim_output(exc.stdout),
+                    "stderr": trim_output(exc.stderr),
+                }
+            )
+            continue
+        except OSError as exc:
+            failures.append(f"Required check could not start: {command} ({exc})")
+            results.append({"command": command, "status": "error", "error": str(exc)})
+            continue
+
+        status = "passed" if completed.returncode == 0 else "failed"
+        if completed.returncode != 0:
+            failures.append(f"Required check failed ({completed.returncode}): {command}")
+        results.append(
+            {
+                "command": command,
+                "status": status,
+                "returncode": completed.returncode,
+                "stdout": trim_output(completed.stdout),
+                "stderr": trim_output(completed.stderr),
+            }
+        )
+    return results
+
+
+def trim_output(value: str | bytes | None, limit: int = 4000) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    return value if len(value) <= limit else value[:limit] + "\n... [truncated]"
+
+
 def git_changed_files(root: Path) -> list[str]:
     if not (root / ".git").exists():
         return []
@@ -416,10 +507,6 @@ def git_changed_files(root: Path) -> list[str]:
         if completed.returncode == 0:
             changed.update(line.strip() for line in completed.stdout.splitlines() if line.strip())
     return sorted(changed)
-
-
-def changed_or_exists(root: Path, changed: list[str], target: str) -> bool:
-    return target in changed or (root / target).exists()
 
 
 def has_unresolved_questions(path: Path) -> bool:
@@ -683,10 +770,20 @@ def render_change_impact_md(payload: dict[str, Any]) -> str:
 def render_preflight_md(report: dict[str, Any]) -> str:
     failures = markdown_list(report["failures"]) or "- None"
     warnings = markdown_list(report["warnings"]) or "- None"
+    checks = markdown_list(
+        [
+            f"`{item['command']}`: {item['status']}"
+            for item in report.get("check_results", [])
+        ]
+    ) or "- None"
     return f"""# Preflight Report
 
 - Status: {report["status"]}
 - Generated at: {report["generated_at"]}
+
+## Required Checks
+
+{checks}
 
 ## Failures
 
