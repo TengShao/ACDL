@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acdl"
+version = "0.1.0"
+description = "Agent Collaborative Development Lifecycle CLI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+  { name = "ACDL Contributors" }
+]
+dependencies = []
+
+[project.scripts]
+acdl = "acdl.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["acdl*"]
