@@ -53,8 +53,6 @@ The project is currently an MVP implemented with Python standard library only.
 
 ## Install
 
-Install the published wheel. This does not require cloning the ACDL repository:
-
 ```bash
 python3 -m pip install --user "https://github.com/TengShao/ACDL/releases/download/v0.1.0/acdl-0.1.0-py3-none-any.whl"
 ```
