@@ -11,3 +11,5 @@ build/
 *.egg-info/
 .acdl/
 .python-version
+ACDL-system-development-plan.md
+ACDL-system-runtime.md
