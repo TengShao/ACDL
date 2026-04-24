@@ -2,7 +2,34 @@
 
 ACDL (**Agent Collaborative Development Lifecycle**) is a CLI for stabilizing multi-agent software collaboration.
 
-It maintains a shared state source that coding agents can read, update, and verify through a fixed lifecycle:
+It is designed for teams where multiple people use different coding agents against the same projects. The goal is not to “write more docs”; the goal is to maintain a shared project state that agents can read, humans can review, machines can verify, and future agents can resume from.
+
+## Core Model
+
+ACDL treats each repository as a small collaboration operating system:
+
+```text
+project repository
+→ acdl CLI
+→ shared state source
+→ agent task workflow
+→ preflight / CI checks
+→ maintained project knowledge
+```
+
+The shared state source is expressed through `AGENTS.md`, `docs/`, `.acdl/` task artifacts, preflight reports, and handoff packs.
+
+ACDL protects five collaboration invariants:
+
+- **Context**: agents start from the same project facts.
+- **Boundary**: every task has an explicit allowed and forbidden scope.
+- **Contract**: API, schema, config, permission, and data model changes are synchronized.
+- **Verification**: critical rules are checked by commands, not memory.
+- **Continuity**: the next agent can continue without rediscovering the project state.
+
+## Lifecycle
+
+ACDL maintains that shared state through a fixed lifecycle:
 
 ```bash
 acdl retrofit
@@ -13,6 +40,14 @@ acdl preflight
 acdl handoff
 acdl maintain
 ```
+
+- `retrofit`: agent-led onboarding for existing projects. Scans the repository and generates the first `AGENTS.md` plus baseline docs.
+- `bootstrap`: creates task context before an agent starts work.
+- `contract`: defines task goal, allowed scope, forbidden scope, checks, and sync expectations.
+- `sync`: analyzes changed files and reports which shared facts may need updates.
+- `preflight`: runs required checks and detects missing fact-source updates before review.
+- `handoff`: creates a continuation pack for the next agent or teammate.
+- `maintain`: checks long-term knowledge drift and stale shared state.
 
 The project is currently an MVP implemented with Python standard library only.
 
@@ -60,6 +95,19 @@ First-time project onboarding:
 acdl retrofit --root /path/to/project
 ```
 
+This generates the baseline collaboration state:
+
+```text
+AGENTS.md
+docs/architecture.md
+docs/contracts.md
+docs/workflows.md
+docs/active-work.md
+docs/open-questions.md
+docs/decisions/0001-current-architecture.md
+.acdl/project-state.json
+```
+
 Per-task flow:
 
 ```bash
@@ -69,6 +117,8 @@ acdl sync --root /path/to/project
 acdl preflight --root /path/to/project
 acdl handoff --root /path/to/project
 ```
+
+During development, agents should stay inside the task contract. Out-of-scope bugs, refactors, or architecture concerns should be recorded as follow-ups unless the task contract explicitly allows expanding scope.
 
 Long-term maintenance:
 
