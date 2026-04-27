@@ -34,6 +34,7 @@ ACDL protects five collaboration invariants:
 ACDL maintains that shared state through a fixed lifecycle:
 
 ```bash
+acdl setup
 acdl retrofit
 acdl bootstrap
 acdl contract
@@ -43,11 +44,12 @@ acdl handoff
 acdl maintain
 ```
 
+- `setup`: installs non-destructive ACDL instruction bridges for Codex, Claude Code, and opencode.
 - `retrofit`: agent-led onboarding for existing projects. Scans the repository and generates the first `AGENTS.md` plus baseline docs.
 - `bootstrap`: creates task context before an agent starts work.
 - `contract`: defines task goal, allowed scope, forbidden scope, checks, and sync expectations.
 - `sync`: analyzes changed files and reports which shared facts may need updates.
-- `preflight`: runs required checks and detects missing fact-source updates before review.
+- `preflight`: runs required checks and detects missing fact-source updates before review. Use `--strict` to fail on workflow warnings.
 - `handoff`: creates a continuation pack for the next agent or teammate.
 - `maintain`: checks long-term knowledge drift and stale shared state.
 
@@ -85,14 +87,29 @@ Uninstall:
 python3 -m pip uninstall acdl
 ```
 
-## Usage
+## Quick Start
 
-After installation, run `acdl` from any project checkout.
+After installation, run `acdl` from any project checkout. When `--root` is omitted, ACDL walks upward from the current directory and uses the nearest project root marker such as `.git`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`, or `AGENTS.md`.
 
-First-time project onboarding:
+1. Install project-level agent instruction bridges:
 
 ```bash
-acdl retrofit --root /path/to/project
+cd /path/to/project
+acdl setup
+```
+
+For non-interactive setup:
+
+```bash
+acdl setup --agents codex,claude,opencode --yes
+```
+
+This preserves existing `AGENTS.md` and `CLAUDE.md` content and only manages the marked ACDL block. The shared long-form workflow lives in `docs/acdl-agent-workflow.md`.
+
+2. Generate the first project collaboration baseline:
+
+```bash
+acdl retrofit
 ```
 
 This generates the baseline collaboration state:
@@ -108,14 +125,16 @@ docs/decisions/0001-current-architecture.md
 .acdl/project-state.json
 ```
 
-Per-task flow:
+3. Use the per-task workflow:
 
 ```bash
-acdl bootstrap --root /path/to/project --task "Implement login"
-acdl contract --root /path/to/project --task "Implement login" --scope src/ --check "npm run test"
-acdl sync --root /path/to/project
-acdl preflight --root /path/to/project
-acdl handoff --root /path/to/project
+acdl bootstrap --task "Implement login"
+acdl contract --task "Implement login" --scope src/ --check "npm run test"
+# edit code
+acdl sync
+acdl preflight
+acdl preflight --strict
+acdl handoff
 ```
 
 During development, agents should stay inside the task contract. Out-of-scope bugs, refactors, or architecture concerns should be recorded as follow-ups unless the task contract explicitly allows expanding scope.
@@ -123,8 +142,10 @@ During development, agents should stay inside the task contract. Out-of-scope bu
 Long-term maintenance:
 
 ```bash
-acdl maintain --root /path/to/project
+acdl maintain
 ```
+
+You can still pass `--root /path/to/project` to any command when running from outside the project.
 
 ## Distribution
 
@@ -186,6 +207,7 @@ ACDL 维护五个协作不变量：
 ACDL 用固定生命周期维护共享状态：
 
 ```bash
+acdl setup
 acdl retrofit
 acdl bootstrap
 acdl contract
@@ -195,11 +217,12 @@ acdl handoff
 acdl maintain
 ```
 
+- `setup`：非破坏式接入 Codex、Claude Code 和 opencode 的项目级指令桥接。
 - `retrofit`：已有项目接入。由 agent 扫描仓库，生成第一版 `AGENTS.md` 和基础 docs。
 - `bootstrap`：任务开始前生成上下文。
 - `contract`：定义任务目标、允许范围、禁止范围、检查命令和同步要求。
 - `sync`：分析代码变更，提示哪些共享事实源可能需要更新。
-- `preflight`：提交前运行检查，并发现缺失的事实源更新。
+- `preflight`：提交前运行检查，并发现缺失的事实源更新。使用 `--strict` 可以让流程 warning 变成失败。
 - `handoff`：生成交接包，方便下一个 agent 或团队成员继续。
 - `maintain`：检查长期知识漂移和过期共享状态。
 
@@ -237,14 +260,29 @@ export PATH="$HOME/Library/Python/3.14/bin:$PATH"
 python3 -m pip uninstall acdl
 ```
 
-## 使用
+## 快速开始
 
-安装后，可以在任意项目仓库中运行 `acdl`。
+安装后，可以在任意项目仓库中运行 `acdl`。如果省略 `--root`，ACDL 会从当前目录向上查找最近的项目根目录标记，例如 `.git`、`pyproject.toml`、`package.json`、`Cargo.toml`、`go.mod` 或 `AGENTS.md`。
 
-已有项目首次接入：
+1. 接入项目级 agent 指令桥接：
 
 ```bash
-acdl retrofit --root /path/to/project
+cd /path/to/project
+acdl setup
+```
+
+非交互式接入：
+
+```bash
+acdl setup --agents codex,claude,opencode --yes
+```
+
+它会保留已有 `AGENTS.md` 和 `CLAUDE.md` 内容，只维护带标记的 ACDL 区块。长规则统一写入 `docs/acdl-agent-workflow.md`。
+
+2. 生成第一版项目协作基线：
+
+```bash
+acdl retrofit
 ```
 
 它会生成基础协作状态：
@@ -260,14 +298,16 @@ docs/decisions/0001-current-architecture.md
 .acdl/project-state.json
 ```
 
-每次任务开发流程：
+3. 每次任务开发流程：
 
 ```bash
-acdl bootstrap --root /path/to/project --task "实现登录"
-acdl contract --root /path/to/project --task "实现登录" --scope src/ --check "npm run test"
-acdl sync --root /path/to/project
-acdl preflight --root /path/to/project
-acdl handoff --root /path/to/project
+acdl bootstrap --task "实现登录"
+acdl contract --task "实现登录" --scope src/ --check "npm run test"
+# 修改代码
+acdl sync
+acdl preflight
+acdl preflight --strict
+acdl handoff
 ```
 
 开发过程中，agent 应该遵守 task contract。契约外的 bug、重构想法或架构问题，默认记录为 follow-up，除非 task contract 明确允许扩大范围。
@@ -275,8 +315,10 @@ acdl handoff --root /path/to/project
 长期维护：
 
 ```bash
-acdl maintain --root /path/to/project
+acdl maintain
 ```
+
+如果从项目外部执行，仍然可以给任意命令显式传入 `--root /path/to/project`。
 
 ## 分发
 

@@ -10,6 +10,7 @@ from .core import (
     maintain,
     preflight,
     retrofit,
+    setup,
     sync,
 )
 
@@ -22,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     command_parent = argparse.ArgumentParser(add_help=False)
     command_parent.add_argument(
         "--root",
-        default=".",
+        default=None,
         help="Project root to operate on. Defaults to the current directory.",
     )
 
@@ -52,8 +53,25 @@ def build_parser() -> argparse.ArgumentParser:
     contract_parser.add_argument("--forbid", action="append", default=[], help="Forbidden path or module. Repeatable.")
     contract_parser.add_argument("--check", action="append", default=[], help="Validation command. Repeatable.")
 
+    setup_parser = subparsers.add_parser(
+        "setup",
+        parents=[command_parent],
+        help="Install ACDL agent instructions into this project.",
+    )
+    setup_parser.add_argument(
+        "--agents",
+        default="",
+        help="Comma-separated agents to configure: codex, claude, opencode. Defaults to all agents.",
+    )
+    setup_parser.add_argument("--yes", action="store_true", help="Run non-interactively and accept changes.")
+
     subparsers.add_parser("sync", parents=[command_parent], help="Analyze changed files and write change impact.")
-    subparsers.add_parser("preflight", parents=[command_parent], help="Run ACDL consistency checks.")
+    preflight_parser = subparsers.add_parser(
+        "preflight",
+        parents=[command_parent],
+        help="Run ACDL consistency checks.",
+    )
+    preflight_parser.add_argument("--strict", action="store_true", help="Fail on ACDL workflow warnings.")
     subparsers.add_parser("handoff", parents=[command_parent], help="Generate a handoff pack.")
     subparsers.add_parser("maintain", parents=[command_parent], help="Check long-term knowledge maintenance risks.")
 
@@ -63,10 +81,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    root = Path(args.root).resolve()
+    root = resolve_root(args.root)
 
     if args.command == "retrofit":
         result = retrofit(root, force=args.force)
+    elif args.command == "setup":
+        result = setup(root, agents=args.agents, yes=args.yes)
     elif args.command == "bootstrap":
         result = bootstrap(root, task=args.task)
     elif args.command == "contract":
@@ -74,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "sync":
         result = sync(root)
     elif args.command == "preflight":
-        result = preflight(root)
+        result = preflight(root, strict=args.strict)
     elif args.command == "handoff":
         result = handoff(root)
     elif args.command == "maintain":
@@ -86,3 +106,25 @@ def main(argv: list[str] | None = None) -> int:
     for path in result.paths:
         print(f"- {path}")
     return result.exit_code
+
+
+def resolve_root(raw_root: str | None) -> Path:
+    if raw_root:
+        return Path(raw_root).resolve()
+    current = Path.cwd().resolve()
+    for candidate in [current, *current.parents]:
+        if is_project_root(candidate):
+            return candidate
+    return current
+
+
+def is_project_root(path: Path) -> bool:
+    markers = (
+        ".git",
+        "pyproject.toml",
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
+        "AGENTS.md",
+    )
+    return any((path / marker).exists() for marker in markers)

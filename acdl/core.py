@@ -17,6 +17,10 @@ DOC_FILES = {
     "open_questions": Path("docs/open-questions.md"),
     "decision": Path("docs/decisions/0001-current-architecture.md"),
 }
+AGENT_WORKFLOW_DOC = Path("docs/acdl-agent-workflow.md")
+ACDL_BLOCK_BEGIN = "<!-- ACDL:BEGIN -->"
+ACDL_BLOCK_END = "<!-- ACDL:END -->"
+SUPPORTED_AGENTS = ("codex", "claude", "opencode")
 
 EXCLUDED_DIRS = {
     ".git",
@@ -77,6 +81,30 @@ def retrofit(root: Path, force: bool = False) -> CommandResult:
     return CommandResult(
         message=f"Retrofit complete. Generated or refreshed {len(written)} file(s).",
         paths=display_paths(root, written),
+    )
+
+
+def setup(root: Path, agents: str = "", yes: bool = False) -> CommandResult:
+    ensure_root(root)
+    selected, error = parse_agents(agents)
+    if error:
+        return CommandResult(error, [], exit_code=1)
+    targets = setup_targets(selected)
+    if not yes and not confirm_setup(selected, targets):
+        return CommandResult("Setup cancelled.", [], exit_code=1)
+
+    failures = validate_managed_targets(root, targets)
+    if failures:
+        return CommandResult("Setup failed: " + "; ".join(failures), [], exit_code=1)
+
+    written: list[Path] = []
+    written.extend(write_markdown(root / AGENT_WORKFLOW_DOC, render_agent_workflow_doc(), force=True))
+    for relative, content in targets.items():
+        written.extend(write_managed_block(root / relative, content))
+
+    return CommandResult(
+        f"Agent setup complete for: {', '.join(selected)}.",
+        display_paths(root, written),
     )
 
 
@@ -148,11 +176,12 @@ def sync(root: Path) -> CommandResult:
     return CommandResult("Change impact analyzed.", display_paths(root, written))
 
 
-def preflight(root: Path) -> CommandResult:
+def preflight(root: Path, strict: bool = False) -> CommandResult:
     ensure_root(root)
     failures: list[str] = []
     warnings: list[str] = []
     check_results: list[dict[str, Any]] = []
+    task_contract: dict[str, Any] = {}
 
     required = [Path("AGENTS.md"), *DOC_FILES.values()]
     for relative in required:
@@ -161,17 +190,36 @@ def preflight(root: Path) -> CommandResult:
 
     task_contract_path = root / ".acdl/task-contract.json"
     if not task_contract_path.exists():
-        warnings.append("Missing .acdl/task-contract.json. Run `acdl contract` before task work.")
+        add_preflight_issue(
+            "Missing .acdl/task-contract.json. Run `acdl contract` before task work.",
+            failures,
+            warnings,
+            strict,
+        )
     else:
         task_contract = load_task_contract(task_contract_path, failures)
-        check_results = run_required_checks(root, task_contract.get("required_checks", []), failures, warnings)
+        check_results = run_required_checks(
+            root,
+            task_contract.get("required_checks", []),
+            failures,
+            warnings,
+            strict=strict,
+        )
 
     changed = git_changed_files(root)
     impact = analyze_change_impact(changed)
     required_updates = required_updates_for_impact(impact)
     for target in required_updates:
         if target not in changed:
-            warnings.append(f"Potential fact-source drift: {target} must be updated in this change.")
+            add_preflight_issue(
+                f"Potential fact-source drift: {target} must be updated in this change.",
+                failures,
+                warnings,
+                strict,
+            )
+
+    if task_contract:
+        validate_task_scope(task_contract, changed, required_updates, failures, warnings, strict)
 
     open_questions = root / "docs/open-questions.md"
     if open_questions.exists() and has_unresolved_questions(open_questions):
@@ -257,6 +305,82 @@ def scan_project(root: Path) -> ProjectScan:
         risk_areas=risk_areas,
         open_questions=open_questions,
     )
+
+
+def parse_agents(raw: str) -> tuple[list[str], str | None]:
+    if not raw.strip():
+        return list(SUPPORTED_AGENTS), None
+    selected: list[str] = []
+    for item in raw.split(","):
+        agent = item.strip().lower()
+        if not agent:
+            continue
+        if agent not in SUPPORTED_AGENTS:
+            return [], f"Unknown agent: {agent}. Supported agents: {', '.join(SUPPORTED_AGENTS)}."
+        if agent not in selected:
+            selected.append(agent)
+    if not selected:
+        return [], "No agents selected."
+    return selected, None
+
+
+def confirm_setup(selected: list[str], targets: dict[Path, str]) -> bool:
+    print("ACDL will configure these agents: " + ", ".join(selected))
+    print("Files may be created or updated with an ACDL managed block:")
+    print(f"- {AGENT_WORKFLOW_DOC}")
+    for path in targets:
+        print(f"- {path}")
+    answer = input("Continue? [Y/n] ").strip().lower()
+    return answer in {"", "y", "yes"}
+
+
+def setup_targets(selected: list[str]) -> dict[Path, str]:
+    targets: dict[Path, str] = {}
+    if "codex" in selected or "opencode" in selected:
+        targets[Path("AGENTS.md")] = render_agents_bridge_block(selected)
+    if "claude" in selected:
+        targets[Path("CLAUDE.md")] = render_claude_bridge_block()
+    return targets
+
+
+def validate_managed_targets(root: Path, targets: dict[Path, str]) -> list[str]:
+    failures: list[str] = []
+    for relative in targets:
+        text = read_text(root / relative)
+        if has_incomplete_managed_block(text):
+            failures.append(f"Incomplete ACDL managed block in {relative}")
+    return failures
+
+
+def has_incomplete_managed_block(text: str) -> bool:
+    return text.count(ACDL_BLOCK_BEGIN) != text.count(ACDL_BLOCK_END)
+
+
+def write_managed_block(path: Path, block_content: str) -> list[Path]:
+    existing = read_text(path)
+    replacement = render_managed_block(block_content)
+    if not existing:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(replacement, encoding="utf-8")
+        return [path]
+
+    start = existing.find(ACDL_BLOCK_BEGIN)
+    end = existing.find(ACDL_BLOCK_END)
+    if start == -1 and end == -1:
+        separator = "" if existing.endswith("\n") else "\n"
+        updated = existing + separator + "\n" + replacement
+    else:
+        end_after = end + len(ACDL_BLOCK_END)
+        updated = existing[:start] + replacement.rstrip("\n") + existing[end_after:]
+
+    if updated == existing:
+        return []
+    path.write_text(updated, encoding="utf-8")
+    return [path]
+
+
+def render_managed_block(content: str) -> str:
+    return f"{ACDL_BLOCK_BEGIN}\n{content.rstrip()}\n{ACDL_BLOCK_END}\n"
 
 
 def list_project_files(root: Path) -> list[Path]:
@@ -404,6 +528,90 @@ def required_updates_for_impact(impact: dict[str, bool]) -> list[str]:
     return updates
 
 
+def add_preflight_issue(
+    message: str,
+    failures: list[str],
+    warnings: list[str],
+    strict: bool,
+) -> None:
+    if strict:
+        failures.append(message)
+    else:
+        warnings.append(message)
+
+
+def validate_task_scope(
+    task_contract: dict[str, Any],
+    changed: list[str],
+    required_updates: list[str],
+    failures: list[str],
+    warnings: list[str],
+    strict: bool,
+) -> None:
+    allowed_scope = normalize_scope_list(task_contract.get("allowed_scope"))
+    forbidden_scope = normalize_scope_list(task_contract.get("forbidden_scope"))
+
+    if not allowed_scope or any(is_todo_scope(scope) for scope in allowed_scope):
+        add_preflight_issue(
+            "Task contract allowed_scope is not declared.",
+            failures,
+            warnings,
+            strict,
+        )
+        return
+
+    for path in changed:
+        if is_scope_exempt(path, required_updates):
+            continue
+        if not any(path_matches_scope(path, scope) for scope in allowed_scope):
+            add_preflight_issue(
+                f"Changed file outside allowed scope: {path}",
+                failures,
+                warnings,
+                strict,
+            )
+
+    for path in changed:
+        for scope in forbidden_scope:
+            if is_todo_scope(scope) or is_default_forbidden_scope(scope):
+                continue
+            if path_matches_scope(path, scope):
+                add_preflight_issue(
+                    f"Changed file matches forbidden scope: {path} ({scope})",
+                    failures,
+                    warnings,
+                    strict,
+                )
+
+
+def normalize_scope_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def is_todo_scope(value: str) -> bool:
+    return value.upper().startswith("TODO")
+
+
+def is_default_forbidden_scope(value: str) -> bool:
+    return value == "Unrelated files outside the task"
+
+
+def is_scope_exempt(path: str, required_updates: list[str]) -> bool:
+    return path.startswith(".acdl/") or path in required_updates
+
+
+def path_matches_scope(path: str, scope: str) -> bool:
+    normalized_scope = scope.strip().lstrip("./")
+    normalized_path = path.strip().lstrip("./")
+    if normalized_scope in {".", "*"}:
+        return True
+    if normalized_scope.endswith("/"):
+        return normalized_path.startswith(normalized_scope)
+    return normalized_path == normalized_scope or normalized_path.startswith(normalized_scope.rstrip("/") + "/")
+
+
 def load_task_contract(path: Path, failures: list[str]) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -424,6 +632,7 @@ def run_required_checks(
     checks: Any,
     failures: list[str],
     warnings: list[str],
+    strict: bool = False,
 ) -> list[dict[str, Any]]:
     if not isinstance(checks, list):
         failures.append("Invalid task contract: required_checks must be a list.")
@@ -436,7 +645,7 @@ def run_required_checks(
             warnings.append("Skipping empty required check.")
             continue
         if command.startswith("TODO"):
-            warnings.append(f"Required check is not declared: {command}")
+            add_preflight_issue(f"Required check is not declared: {command}", failures, warnings, strict)
             results.append({"command": command, "status": "skipped", "reason": "TODO placeholder"})
             continue
 
@@ -538,6 +747,45 @@ def load_or_scan_state(root: Path) -> dict[str, Any]:
 def required_reads(root: Path) -> list[str]:
     candidates = [Path("AGENTS.md"), *DOC_FILES.values()]
     return [str(path) for path in candidates if (root / path).exists()]
+
+
+def render_agent_workflow_doc() -> str:
+    return """# ACDL Agent Workflow
+
+This file is the shared workflow for coding agents in this repository.
+
+## Required Lifecycle
+
+1. Read `AGENTS.md` and the relevant files under `docs/` before editing code.
+2. Run `acdl bootstrap` before task work when task context is missing or stale.
+3. Run `acdl contract` before implementation and keep changes inside the declared scope.
+4. Run `acdl sync` after edits to analyze fact-source impact.
+5. Run `acdl preflight` before review or handoff.
+6. Run `acdl handoff` before ending the task when another person or agent may continue.
+
+## Failure Rule
+
+If an ACDL command fails, stop and report the failure instead of continuing silently.
+"""
+
+
+def render_agents_bridge_block(selected: list[str]) -> str:
+    names = ", ".join(agent for agent in selected if agent in {"codex", "opencode"})
+    return f"""## ACDL Agent Workflow
+
+This repository uses ACDL for agent collaboration. Agents configured through this file: {names}.
+
+Read and follow `docs/acdl-agent-workflow.md` before editing code. Keep task work inside `.acdl/task-contract.json`, run `acdl sync` after edits, and run `acdl preflight` before handoff or review.
+"""
+
+
+def render_claude_bridge_block() -> str:
+    return """@AGENTS.md
+
+## ACDL Agent Workflow
+
+Follow the shared ACDL workflow in `docs/acdl-agent-workflow.md`. Treat `AGENTS.md` as the cross-agent source of truth for repository instructions.
+"""
 
 
 def render_agents_md(scan: ProjectScan) -> str:

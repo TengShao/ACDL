@@ -15,6 +15,23 @@ This installs a normal Python console command named `acdl`.
 
 Teammates do not need the ACDL source checkout. They only need Python and pip.
 
+After installation, project owners can run the setup wizard from a project checkout:
+
+```bash
+cd /path/to/project
+acdl setup
+```
+
+For scripts or team onboarding docs, use the non-interactive form:
+
+```bash
+acdl setup --agents codex,claude,opencode --yes
+```
+
+Setup preserves existing agent instruction files and only updates the ACDL managed block.
+
+When `--root` is omitted, ACDL walks upward from the current directory and uses the nearest project root marker such as `.git`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`, or `AGENTS.md`.
+
 ## Upgrade
 
 Install the newer wheel URL:
@@ -88,6 +105,7 @@ The build script uses only Python standard library modules. It does not require 
 ACDL v0.1.0 exposes these commands:
 
 ```bash
+acdl setup
 acdl retrofit
 acdl bootstrap
 acdl contract
